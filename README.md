@@ -13,7 +13,7 @@ files are listed in the listbox by descending order of scores.
 5. Click the play button to play the selected video by calling an external video player on your system.
 6. Detect faces on the video frame that currently showed.
 
-####_Depends on third party programs_
+#### _Depends on third party programs_
 
 opencv-python https://pypi.org/project/opencv-python/
 
