@@ -305,13 +305,14 @@ class VideoPlayer:
         if self.selected_video is None:
             return
         frames = self.selected_video.get_small_frames()
-        if len(frames) is not 12:
-            return
         self.graph.Erase()
         size = small_frame_size
         for j in range(0, 3):
             for i in range(0, 4):
-                frame = self.selected_video.get_small_frames()[j * 4 + i]
+                index = j*4 + i
+                if index >= len(frames):
+                    break
+                frame = frames[index]
                 if frame is not None:
                     width = size[0]
                     height = size[1]
