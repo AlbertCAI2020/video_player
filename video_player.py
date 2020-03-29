@@ -10,7 +10,12 @@ from video_file import *
 class MediaFinder:
     def __init__(self, folder, suffixes=None):
         if suffixes is None:
-            suffixes = ['.mp4', '.avi', '.wmv', '.rmvb']
+            suffixes = ['.mp4',
+                        '.avi',
+                        '.wmv',
+                        '.rmvb',
+                        '.mkv'
+                        ]
         self.root = folder
         self.suffixes = suffixes
         self.files = []
@@ -128,8 +133,10 @@ class VideoPlayer:
             [
                 sg.Menu([
                     ['&File', ['Open Folder', 'Close all']],
-                    ['&Edit', ['&Detect face', '&Mark', 'Open container folder']],
-                    ['&History', ['All::load_all', 'Marked::load_marked', '&Remove']],
+                    ['&Edit', ['&Detect face', '&Mark', 'Open container folder',
+                               'List not exists', 'List same names', 'List key words']
+                    ],
+                    ['&History', ['All::load_all', 'Marked::load_marked', '&Remove selected']],
                     ['&Settings', ['Face detect']]
                 ])
             ],
@@ -151,7 +158,10 @@ class VideoPlayer:
             'listbox': self._handle_file_selected,
             'Play': self._handle_play_video,
             'Detect face': self._handle_detect_face,
-            'Remove': self._handle_file_remove,
+            'Remove selected': self._handle_file_remove,
+            'List not exists': self._handle_list_not_exists,
+            'List same names': self._handle_list_same_names,
+            'List key words': self._handle_list_key_words,
             'slider': self._handle_slider_move
         }
         self.selected_video = None
@@ -179,8 +189,7 @@ class VideoPlayer:
                 if file not in items:
                     items.append(file)
                     _thread.process(file)
-        self.window['listbox'].update(items)
-        self.window['total_count'].Update(str(len(items)))
+        self._update_file_list(items)
 
     def _handle_open_container_folder(self):
         if self.selected_video is not None:
@@ -191,31 +200,79 @@ class VideoPlayer:
                 return
             os.startfile(path)
 
+    def _handle_list_not_exists(self):
+        listbox = self.window['listbox']
+        files = listbox.GetListValues()
+        not_exists = []
+        for file in files:
+            if not os.path.exists(file):
+                not_exists.append(file)
+        self._update_file_list(not_exists)
+
+    def _handle_list_same_names(self):
+        listbox = self.window['listbox']
+        files = listbox.GetListValues()
+        names = dict()
+        for file in files:
+            name = os.path.basename(file)
+            if name in names:
+                names[name].append(file)
+            else:
+                names[name] = [file]
+        files_with_same_name = []
+        for _, paths in names.items():
+            if len(paths) > 1:
+                files_with_same_name += paths
+        self._update_file_list(files_with_same_name)
+
+    def _handle_list_key_words(self):
+        words = sg.PopupGetText('Input the key words', title='Input', keep_on_top=True)
+        if words is None or len(words) == 0:
+            return
+        print('select file paths contains key words: %s' % words)
+        listbox = self.window['listbox']
+        files = listbox.GetListValues()
+        results = []
+        for file in files:
+            if words in file:
+                results.append(file)
+        self._update_file_list(results)
+
     def _handle_close_all(self):
-        self.window['listbox'].Update([])
         self.window['slider'].Update(1)
         self.window['graph'].Erase()
         self.selected_video = None
-        self.window['total_count'].Update('0')
+        self._update_file_list([])
 
     def _handle_load_all(self):
         repo = Repository(cache_repo)
         files = repo.find_all()
-        self.window['listbox'].Update(values=[file['path'] for file in files])
-        self.window['total_count'].Update(str(len(files)))
+        self._update_file_list([file['path'] for file in files])
 
     def _handle_load_marked(self):
         lower, upper = SelectWindow().read()
         repo = Repository(cache_repo)
         files = repo.find_with_score(lower, upper)
-        self.window['listbox'].Update(values=[file['path'] for file in files])
-        self.window['total_count'].Update(str(len(files)))
+        self._update_file_list([file['path'] for file in files])
 
     def _handle_mark(self):
         if self.selected_video is not None:
             score = MarkWindow(self.selected_video.score).read()
             if score is not None:
                 self.selected_video.set_score(score)
+
+    def _handle_file_remove(self):
+        listbox = self.window['listbox']
+        files = listbox.GetListValues()
+        selected = listbox.get()
+        for file in selected:
+            VideoFile(file).delete_cache()
+            files.remove(file)
+        self._update_file_list(files)
+
+    def _update_file_list(self, files):
+        self.window['listbox'].Update(files)
+        self.window['total_count'].Update(str(len(files)))
 
     def _handle_file_selected(self, files):
         if len(files) is 0:
@@ -226,16 +283,6 @@ class VideoPlayer:
             if self.selected_video.is_cache_exist():
                 self.selected_video.load_cache()
         self._display_small_graphs()
-
-    def _handle_file_remove(self):
-        listbox = self.window['listbox']
-        files = listbox.GetListValues()
-        selected = listbox.get()
-        for file in selected:
-            VideoFile(file).delete_cache()
-            files.remove(file)
-        listbox.Update(files)
-        self.window['total_count'].Update(str(len(files)))
 
     def _handle_play_video(self):
         if self.selected_video is None or not self.selected_video.is_file_exist():
