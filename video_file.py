@@ -86,6 +86,13 @@ class Repository:
         cursor.close()
         self.conn.commit()
 
+    def update_path(self, uid, path):
+        cursor = self.conn.cursor()
+        path = _encode_path(path)
+        cursor.execute('update videos set path=? where uuid=?', (path, uid))
+        cursor.close()
+        self.conn.commit()
+
     def delete(self, uid):
         self.conn.execute('delete from videos where uuid=?', (uid,))
         self.conn.commit()
@@ -206,3 +213,9 @@ class VideoFile:
         self.score = score
         repo = Repository(cache_repo)
         repo.update_score(self.uid, score)
+
+    def modify_path(self, path):
+        self.path = path
+        repo = Repository(cache_repo)
+        repo.update_path(self.uid, path)
+

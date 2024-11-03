@@ -1,5 +1,3 @@
-import os
-import cv2
 import threading
 import queue
 import PySimpleGUI as sg
@@ -14,7 +12,9 @@ class MediaFinder:
                         '.avi',
                         '.wmv',
                         '.rmvb',
-                        '.mkv'
+                        '.mkv',
+                        '.TS',
+                        '.ts'
                         ]
         self.root = folder
         self.suffixes = suffixes
@@ -22,6 +22,7 @@ class MediaFinder:
 
     def find_all(self):
         for root, dirs, files in os.walk(self.root):
+
             for file in files:
                 for suffix in self.suffixes:
                     if file.endswith(suffix):
@@ -61,10 +62,10 @@ class VideoProcess(threading.Thread):
         self.join()
 
 
-_thread = VideoProcess()
+_video_processor = VideoProcess()
 
 
-class MarkWindow:
+class ScoreMarkWindow:
     def __init__(self, score=0):
         layout = [[sg.Text('Give a mark for current video <0-100>')],
                   [sg.InputText(default_text=str(score), size=(20, 1), do_not_clear=False, key='_INPUT_'),
@@ -89,7 +90,42 @@ class MarkWindow:
         del self.window
 
 
-class SelectWindow:
+class DirectoryChangeWindow:
+    def __init__(self):
+        layout = [[sg.Text('Original Folder:'),
+                   sg.InputText(size=(20, 1), do_not_clear=False, key='_SRC_')],
+                  [sg.Text('Modified Folder:'),
+                   sg.InputText(size=(20, 1), do_not_clear=False, key='_DST_')],
+                  [sg.Text(size=(15, 1)), sg.Button('Cancel', size=(5, 1)),
+                   sg.Button('Ok', size=(5, 1), bind_return_key=True)]
+                  ]
+        self.window = sg.Window(title='Mark', layout=layout, keep_on_top=True)
+
+    def read(self):
+        src = ''
+        dst = ''
+        while True:
+            button, values = self.window.Read()
+            if button != 'Ok':
+                break
+            src = values['_SRC_']
+            dst = values['_DST_']
+            src = src.strip()
+            dst = dst.strip()
+            if len(src) is 0 or len(dst) is 0:
+                break
+            if not src.endswith('\\') and not src.endswith('/'):
+                src = src + '\\'
+            if not dst.endswith('\\') and not dst.endswith('/'):
+                dst = dst + '\\'
+        return src, dst
+
+    def __del__(self):
+        self.window.close()
+        del self.window
+
+
+class SelectByScoreWindow:
     def __init__(self):
         layout = [[sg.Text('score range')],
                   [sg.InputText(default_text='60', size=(10, 1), key='_lower_'),
@@ -134,9 +170,10 @@ class VideoPlayer:
                 sg.Menu([
                     ['&File', ['Open Folder', 'Close all']],
                     ['&Edit', ['&Detect face', '&Mark', 'Open container folder',
-                               'List not exists', 'List same names', 'List key words']
-                    ],
-                    ['&History', ['All::load_all', 'Marked::load_marked', '&Remove selected']],
+                               'List not exists', 'List same names', 'List key words',
+                               '&Remove selected', 'Modify selected directory']
+                     ],
+                    ['&History', ['All::load_all', 'Marked::load_marked']],
                     ['&Settings', ['Face detect']]
                 ])
             ],
@@ -159,6 +196,7 @@ class VideoPlayer:
             'Play': self._handle_play_video,
             'Detect face': self._handle_detect_face,
             'Remove selected': self._handle_file_remove,
+            'Modify selected directory': self._handle_modify_directory,
             'List not exists': self._handle_list_not_exists,
             'List same names': self._handle_list_same_names,
             'List key words': self._handle_list_key_words,
@@ -188,7 +226,7 @@ class VideoPlayer:
             for file in files:
                 if file not in items:
                     items.append(file)
-                    _thread.process(file)
+                    _video_processor.process(file)
         self._update_file_list(items)
 
     def _handle_open_container_folder(self):
@@ -250,14 +288,14 @@ class VideoPlayer:
         self._update_file_list([file['path'] for file in files])
 
     def _handle_load_marked(self):
-        lower, upper = SelectWindow().read()
+        lower, upper = SelectByScoreWindow().read()
         repo = Repository(cache_repo)
         files = repo.find_with_score(lower, upper)
         self._update_file_list([file['path'] for file in files])
 
     def _handle_mark(self):
         if self.selected_video is not None:
-            score = MarkWindow(self.selected_video.score).read()
+            score = ScoreMarkWindow(self.selected_video.score).read()
             if score is not None:
                 self.selected_video.set_score(score)
 
@@ -284,6 +322,24 @@ class VideoPlayer:
                 self.selected_video.load_cache()
         self._display_small_graphs()
 
+    def _handle_modify_directory(self):
+        src, dst = DirectoryChangeWindow().read()
+        if len(src) is 0 or len(dst) is 0:
+            return
+        print('change directory from %s to %s for selected files' % (src, dst))
+        listbox = self.window['listbox']
+        files = listbox.GetListValues()
+        selected = listbox.get()
+        for file in selected:
+            if file.startswith(src):
+                i = files.index(file)
+                new_file = file.replace(src, dst, 1)
+                print('change file %d from %s to %s' % (i, file, new_file))
+                files[i] = new_file
+                VideoFile(file).modify_path(new_file)
+        self._update_file_list(files)
+        return
+
     def _handle_play_video(self):
         if self.selected_video is None or not self.selected_video.is_file_exist():
             sg.popup_error('file not exists', keep_on_top=True)
@@ -309,7 +365,7 @@ class VideoPlayer:
         size = small_frame_size
         for j in range(0, 3):
             for i in range(0, 4):
-                index = j*4 + i
+                index = j * 4 + i
                 if index >= len(frames):
                     break
                 frame = frames[index]
@@ -339,6 +395,6 @@ class VideoPlayer:
 
 
 if __name__ == '__main__':
-    _thread.start()
+    _video_processor.start()
     VideoPlayer().run()
-    _thread.stop()
+    _video_processor.stop()
